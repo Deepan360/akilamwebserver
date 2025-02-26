@@ -72,7 +72,7 @@ app.post("/send-email", async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background-color: #f9f9f9;">
           <div style="text-align: center;">
-            <img src="https://www.akilamtechnology.com/assets/img/AkilamTechmidlogo.png" alt="Akilam Education" style="max-width: 150px; margin-bottom: 20px;">
+            <img src="https://www.akilamtechnology.com/AkilamTechmidlogo.png" alt="Akilam Education" style="max-width: 150px; margin-bottom: 20px;">
           </div>
           <h2 style="color: #ae3a94; text-align: center;">Welcome to Akilam Education, ${firstName}!</h2>
           <p style="color: #555; font-size: 16px;">Congratulations! You have successfully registered for <strong>${course}</strong> Course. We're excited to have you on board and look forward to helping you achieve your learning goals.</p>

@@ -68,16 +68,16 @@ app.post("/send-email", async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "🎉 Welcome to Akilam Education - Registration Confirmed!",
+      subject: "🎉 Welcome to Akilam Technology - Registration Confirmed!",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background-color: #f9f9f9;">
           <div style="text-align: center;">
-            <img src="https://www.akilamtechnology.com/AkilamTechmidlogo.png" alt="Akilam Education" style="max-width: 150px; margin-bottom: 20px;">
+            <img src="https://www.akilamtechnology.com/AkilamTechmidlogo.png" alt="Akilam Technology" style="max-width: 150px; margin-bottom: 20px;">
           </div>
-          <h2 style="color: #ae3a94; text-align: center;">Welcome to Akilam Education, ${firstName}!</h2>
+          <h2 style="color: #ae3a94; text-align: center;">Welcome to Akilam Technology, ${firstName}!</h2>
           <p style="color: #555; font-size: 16px;">Congratulations! You have successfully registered for <strong>${course}</strong> Course. We're excited to have you on board and look forward to helping you achieve your learning goals.</p>
-          <p style="color: #555; font-size: 16px;">If you have any questions, feel free to reach out at <a href="mailto:support@akilameducation.com" style="color: #007bff;">support@akilameducation.com</a>.</p>
-          <p style="color: #ae3a94; font-size: 14px; text-align: center; margin-top: 20px;">Best regards,<br><strong>Akilam Education</strong> (Akilam Technology LLP)</p>
+          <p style="color: #555; font-size: 16px;">If you have any questions, feel free to reach out at <a href="mailto:info@akilamtechnology.com" style="color: #007bff;">info@akilamtechnology.com</a>.</p>
+          <p style="color: #ae3a94; font-size: 14px; text-align: center; margin-top: 20px;">Best regards,<br><strong>Akilam Technology</strong> (Akilam Technology LLP)</p>
         </div>
       `,
     };

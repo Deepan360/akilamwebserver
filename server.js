@@ -18,14 +18,7 @@ const PORT = process.env.PORT || 8987;
 app.use(express.json());
 app.use(cors());
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
-// Serve uploaded images statically
-app.use("/uploads", express.static(uploadsDir));
 
 /* -------------------- DB Config -------------------- */
 const dbConfig = {
@@ -236,44 +229,74 @@ app.post("/api/verify-payment", async (req, res) => {
 
 
 app.post("/api/validate-coupon", async (req, res) => {
-  const { couponCode, courseFee } = req.body;
+  let { couponCode, courseFee } = req.body;
 
   try {
+    // Ensure courseFee is a number
+    courseFee = Number(courseFee);
+    if (!couponCode || isNaN(courseFee)) {
+      return res.json({ valid: false, message: "Invalid input" });
+    }
+
+    // Normalize couponCode input
+    const normalizedCoupon = couponCode.trim().toUpperCase();
+    console.log("Validating coupon:", normalizedCoupon, "for fee:", courseFee);
+
     const pool = await sql.connect(dbConfig);
+
     const result = await pool
       .request()
-      .input("couponCode", sql.VarChar, couponCode).query(`
-        SELECT id, discount, start_date, end_date
+      .input("couponCode", sql.VarChar, normalizedCoupon)
+      .query(`
+        SELECT 
+          id, 
+          discount, 
+          start_date, 
+          end_date,
+          couponcode
         FROM [AkilamWebsite].[dbo].[couponvalues]
-        WHERE couponcode = @couponCode
+        WHERE UPPER(RTRIM(LTRIM(couponcode))) = @couponCode
       `);
 
     if (result.recordset.length === 0) {
+      console.log("Coupon not found in DB");
       return res.json({ valid: false, message: "Invalid coupon" });
     }
 
     const coupon = result.recordset[0];
-    const now = new Date();
 
-    if (now < coupon.start_date || now > coupon.end_date) {
+    // Normalize current date to midnight for safe comparison
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const startDate = new Date(coupon.start_date);
+    const endDate = new Date(coupon.end_date);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999); // Include full end day
+
+    if (today < startDate || today > endDate) {
+      console.log("Coupon expired:", { today, startDate, endDate });
       return res.json({ valid: false, message: "Coupon expired" });
     }
 
-    // Apply discount
     const discountAmount = (courseFee * coupon.discount) / 100;
     const finalAmount = Math.max(courseFee - discountAmount, 0);
 
-    res.json({
+    return res.json({
       valid: true,
       discount: coupon.discount,
       finalAmount,
       message: `Coupon applied: ${coupon.discount}% OFF`,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Coupon validation error:", err);
     res.status(500).json({ valid: false, message: "Server error" });
   }
 });
+
+
+
+
 
 /* -------------------- Category APIs -------------------- */
 app.get("/api/categories", async (_req, res) => {
@@ -393,8 +416,10 @@ app.post("/api/applyCoupon", async (req, res) => {
   }
 });
 
-
 /* -------------------- Multer (file upload) -------------------- */
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) =>
@@ -402,48 +427,50 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-app.post("/api/upload", upload.single("courseImage"), (req, res) => {
-  try {
-    if (!req.file) {
-      console.error("❌ Multer did not receive file");
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-    // Recommend storing only the filename in DB
-    const filename = req.file.filename;
-    const url = `/uploads/${filename}`;
-    console.log("✅ File uploaded:", filename);
-    res.json({ filename, url, imagePath: url }); // imagePath kept for backward-compat
-  } catch (err) {
-    console.error("Upload error:", err);
-    res.status(500).json({ error: "Upload failed" });
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+
+
+// Image upload route
+app.post("/api/upload", upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
   }
+
+  const filename = req.file.filename;
+  const relativePath = `/uploads/${filename}`;
+  const fullUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+
+  res.json({
+    filename,
+    relativePath, // stored in DB if you want local reference
+    url: fullUrl, // full URL for frontend use
+  });
 });
+
+
 
 /* -------------------- Add Course -------------------- */
 app.post("/api/course", async (req, res) => {
   const {
     course,
     coursedetails,
-    coursecouponid, // number or null
+    coursecouponid,
     courseduration,
-    coursecategory, // number or null (ID)
-    courseimage, // recommend sending the filename only
-    coursefee, // optional, placeholder for future
+    coursecategory,
+    courseimage, // can be either full URL or relative path
+    coursefee,
   } = req.body;
 
-  // Basic validation
-  if (!course)
+  if (!course) {
     return res
       .status(400)
-      .json({ success: false, message: "course is required" });
+      .json({ success: false, message: "Course is required" });
+  }
 
-  // Normalize IDs to integers (or null)
-  const couponId = Number.isFinite(Number(coursecouponid))
-    ? Number(coursecouponid)
-    : null;
-  const categoryId = Number.isFinite(Number(coursecategory))
-    ? Number(coursecategory)
-    : null;
+  // Normalize IDs
+  const couponId = coursecouponid ? Number(coursecouponid) : null;
+  const categoryId = coursecategory ? Number(coursecategory) : null;
 
   try {
     const pool = await sql.connect(dbConfig);
@@ -453,44 +480,59 @@ app.post("/api/course", async (req, res) => {
       .input("coursedetails", sql.NVarChar, coursedetails || null)
       .input("coursecouponid", sql.Int, couponId)
       .input("courseduration", sql.NVarChar, courseduration || null)
-      .input("coursecategory", sql.Int, categoryId) // ✅ Int for FK ID
-      .input("courseimage", sql.NVarChar, courseimage || null) // store filename or url; your choice
-      .input("coursefee", sql.Decimal, coursefee || null) // placeholder if needed
-      .query(`
-        INSERT INTO course (course, coursedetails, coursecouponid, courseduration, coursecategory, courseimage, coursefee)
-        VALUES (@course, @coursedetails, @coursecouponid, @courseduration, @coursecategory, @courseimage, @coursefee)
+      .input("coursecategory", sql.Int, categoryId)
+      .input("courseimage", sql.NVarChar, courseimage || null) // ✅ store whatever comes
+      .input("coursefee", sql.Decimal(18, 2), coursefee || null).query(`
+        INSERT INTO course (
+          course, coursedetails, coursecouponid,
+          courseduration, coursecategory, courseimage, coursefee
+        ) VALUES (
+          @course, @coursedetails, @coursecouponid,
+          @courseduration, @coursecategory, @courseimage, @coursefee
+        )
       `);
 
     res.json({ success: true, message: "✅ Course added successfully" });
-  } catch (error) {
-    console.error("Error inserting course:", error);
+  } catch (err) {
+    console.error("Error inserting course:", err);
     res.status(500).json({ success: false, error: "Database error" });
   }
 });
 
+
+/* -------------------- Get Courses -------------------- */
 app.get("/api/courses", async (req, res) => {
   try {
     const pool = await sql.connect(dbConfig);
     const result = await pool.request().query(`
-SELECT 
-    c.id,
-    c.course,
-    c.courseimage,
-    c.coursedetails,
-    c.coursecouponid,
-    c.courseduration,
-    c.coursefee,
-    cc.category_name AS categoryname
-FROM [AkilamWebsite].[dbo].[course] c
-LEFT JOIN [AkilamWebsite].[dbo].[CourseCategory] cc
-    ON TRY_CAST(c.coursecategory AS INT) = cc.id
-ORDER BY 
-    CASE WHEN cc.is_top = 1 THEN 0 ELSE 1 END, -- top courses first
-    c.id ASC; -- then ascending by id
-
-
+      SELECT 
+          c.id,
+          c.course,
+          c.courseimage,
+          c.coursedetails,
+          c.coursecouponid,
+          c.courseduration,
+          c.coursefee,
+          cc.category_name AS categoryname
+      FROM [AkilamWebsite].[dbo].[course] c
+      LEFT JOIN [AkilamWebsite].[dbo].[CourseCategory] cc
+          ON TRY_CAST(c.coursecategory AS INT) = cc.id
+      ORDER BY 
+          CASE WHEN cc.is_top = 1 THEN 0 ELSE 1 END,
+          c.id ASC;
     `);
-    res.json(result.recordset);
+
+    // 🔑 Normalize courseimage
+    const courses = result.recordset.map((course) => {
+      if (course.courseimage && !course.courseimage.startsWith("http")) {
+        course.courseimage = `${req.protocol}://${req.get("host")}${
+          course.courseimage.startsWith("/") ? "" : "/"
+        }${course.courseimage}`;
+      }
+      return course;
+    });
+
+    res.json(courses);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server Error" });
@@ -499,6 +541,7 @@ ORDER BY
 
 
 /* -------------------- Start Server -------------------- */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running at http://0.0.0.0:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log("Serving uploads from:", path.join(__dirname, "uploads"));
 });
